@@ -1,6 +1,6 @@
 <h1 align="center">🖥️ TaskForce Tkinter</h1>
 
-<p align="center">Aplicação <b>desktop</b> desenvolvida em <b>Python + Tkinter</b> para gerenciar tarefas (to-do list), consumindo a [TaskForce API](https://github.com/GoomezCode/TaskForce_api) através de requisições HTTP.</p>
+<p align="center">Aplicação <b>desktop</b> desenvolvida em <b>Python + Tkinter</b> para gerenciar tarefas (to-do list), consumindo a  <a href="https://github.com/GoomezCode/TaskForce_api">TaskForce API</a> através de requisições HTTP.</p>
 
 <p align="center">
     <img src="https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white">
