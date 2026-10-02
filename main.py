@@ -2,6 +2,11 @@
 
 Run:
     python main.py
+
+Design: single-column ops board, two themes (Light/Dark) from `ui.theme`,
+applied via `ui.styles.apply_theme` on top of ttk `clam`. The progress
+bar in the header is the one memorable element; everything else stays
+quiet (see frontend-design skill plan).
 """
 
 from __future__ import annotations
@@ -13,9 +18,13 @@ from typing import Any, Callable, Optional
 
 import config
 from api.client import ApiError, TaskForceClient
+from ui.styles import FONT_ENTRY, apply_theme
+from ui.theme import THEMES, Theme, load_theme_name, save_theme_name
 
 FILTER_OPTIONS = ("Todas", "Pendentes", "Concluídas")
 PAGE_SIZE_OPTIONS = ("10", "20", "50")
+
+PAD_X = 16  # outer horizontal breathing room (8pt grid x2)
 
 
 def _filter_to_is_done(label: str) -> Optional[bool]:
@@ -29,19 +38,27 @@ def _filter_to_is_done(label: str) -> Optional[bool]:
 class EditDialog(tk.Toplevel):
     """Modal dialog to edit a task title."""
 
-    def __init__(self, parent: tk.Misc, initial: str, on_save: Callable[[str], None]):
+    def __init__(
+        self,
+        parent: tk.Misc,
+        initial: str,
+        on_save: Callable[[str], None],
+        theme: Theme,
+    ):
         super().__init__(parent)
         self.title("Editar tarefa")
         self.transient(parent)
         self.grab_set()
         self.resizable(False, False)
+        self.configure(background=theme.bg)
         self._on_save = on_save
+        self._theme = theme
 
         frame = ttk.Frame(self, padding=16)
         frame.pack(fill="both", expand=True)
 
         ttk.Label(frame, text="Título da tarefa:").pack(anchor="w")
-        self.entry = ttk.Entry(frame, width=45, font=("Arial", 12))
+        self.entry = ttk.Entry(frame, width=45, font=FONT_ENTRY, style="TEntry")
         self.entry.insert(0, initial)
         self.entry.pack(pady=(6, 12))
         self.entry.focus_set()
@@ -50,7 +67,8 @@ class EditDialog(tk.Toplevel):
         buttons = ttk.Frame(frame)
         buttons.pack(fill="x")
         ttk.Button(buttons, text="Cancelar", command=self.destroy).pack(side="right")
-        ttk.Button(buttons, text="Salvar", command=self._save).pack(side="right", padx=(0, 8))
+        ttk.Button(buttons, text="Salvar", style="Accent.TButton",
+                   command=self._save).pack(side="right", padx=(0, 8))
         self.entry.bind("<Return>", lambda _e: self._save())
         self.bind("<Escape>", lambda _e: self.destroy())
 
@@ -72,69 +90,89 @@ class TaskForceApp:
         self._busy = False
         self._pending_msg: Optional[str] = None
 
+        self.theme_name = load_theme_name()
+        self.theme: Theme = THEMES[self.theme_name]
+
         self.window = tk.Tk()
         self.window.title("TaskForce")
         self.window.geometry("800x600")
         self.window.minsize(640, 480)
         self._build_layout()
+        self._apply_theme()
         self.refresh_all()
 
     # -- layout ------------------------------------------------------
     def _build_layout(self) -> None:
         self.window.columnconfigure(0, weight=1)
 
-        header = ttk.Frame(self.window, padding=(12, 12, 12, 4))
+        header = ttk.Frame(self.window, padding=(PAD_X, 12, PAD_X, 4))
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
-        ttk.Label(header, text="TaskForce", font=("Arial", 18, "bold")).grid(row=0, column=0, sticky="w")
-        self.lbl_stats = ttk.Label(header, text="Total: — • Feitas: — • Pendentes: —")
-        self.lbl_stats.grid(row=1, column=0, sticky="w", pady=(2, 0))
+        ttk.Label(header, text="TaskForce", style="Title.TLabel").grid(
+            row=0, column=0, sticky="w")
+        self.btn_theme = ttk.Button(header, text="", command=self.on_toggle_theme)
+        self.btn_theme.grid(row=0, column=1, sticky="e")
+        self.lbl_stats = ttk.Label(header, text="Carregando resumo…",
+                                   style="Muted.TLabel")
+        self.lbl_stats.grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        self.progress = ttk.Progressbar(header, style="Horizontal.TProgressbar",
+                                        orient="horizontal", mode="determinate",
+                                        maximum=100, value=0)
+        self.progress.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
 
-        create_bar = ttk.Frame(self.window, padding=(12, 4, 12, 4))
+        create_bar = ttk.Frame(self.window, padding=(PAD_X, 4, PAD_X, 4))
         create_bar.grid(row=1, column=0, sticky="ew")
         create_bar.columnconfigure(0, weight=1)
-        self.entry_title = ttk.Entry(create_bar, font=("Arial", 12))
+        self.entry_title = ttk.Entry(create_bar, font=FONT_ENTRY, style="TEntry")
         self.entry_title.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         self.entry_title.insert(0, "")
         self.entry_title.bind("<Return>", lambda _e: self.on_create())
-        self.btn_create = ttk.Button(create_bar, text="Criar", command=self.on_create)
+        self.btn_create = ttk.Button(create_bar, text="Criar",
+                                     style="Accent.TButton", command=self.on_create)
         self.btn_create.grid(row=0, column=1)
 
-        toolbar = ttk.Frame(self.window, padding=(12, 4, 12, 4))
+        toolbar = ttk.Frame(self.window, padding=(PAD_X, 4, PAD_X, 4))
         toolbar.grid(row=2, column=0, sticky="ew")  # below create bar
         toolbar.columnconfigure(1, weight=1)
         ttk.Label(toolbar, text="Buscar:").grid(row=0, column=0, padx=(0, 4))
-        self.entry_search = ttk.Entry(toolbar, font=("Arial", 11))
+        self.entry_search = ttk.Entry(toolbar, font=FONT_ENTRY, style="TEntry")
         self.entry_search.grid(row=0, column=1, sticky="ew", padx=(0, 8))
         self.entry_search.bind("<Return>", lambda _e: self.on_search())
-        self.cmb_filter = ttk.Combobox(toolbar, values=list(FILTER_OPTIONS), state="readonly", width=12)
+        self.cmb_filter = ttk.Combobox(toolbar, values=list(FILTER_OPTIONS),
+                                       state="readonly", width=12)
         self.cmb_filter.set(FILTER_OPTIONS[0])
         self.cmb_filter.grid(row=0, column=2, padx=(0, 8))
         self.cmb_filter.bind("<<ComboboxSelected>>", lambda _e: self.on_search())
-        ttk.Button(toolbar, text="Buscar", command=self.on_search).grid(row=0, column=3, padx=(0, 4))
-        ttk.Button(toolbar, text="Limpar", command=self.on_clear_filters).grid(row=0, column=4)
+        ttk.Button(toolbar, text="Buscar", command=self.on_search).grid(
+            row=0, column=3, padx=(0, 4))
+        ttk.Button(toolbar, text="Limpar", command=self.on_clear_filters).grid(
+            row=0, column=4)
 
-        table_frame = ttk.Frame(self.window, padding=(12, 4, 12, 4))
+        table_frame = ttk.Frame(self.window, padding=(PAD_X, 4, PAD_X, 4))
         table_frame.grid(row=3, column=0, sticky="nsew")  # expandable
         self.window.rowconfigure(3, weight=1)
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(0, weight=1)
 
         columns = ("Id", "Tarefa", "Feito", "Data", "Hora")
-        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", selectmode="browse")
-        widths = {"Id": 60, "Tarefa": 320, "Feito": 80, "Data": 110, "Hora": 100}
+        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings",
+                                 selectmode="browse", style="Treeview")
+        widths = {"Id": 60, "Tarefa": 320, "Feito": 110, "Data": 110, "Hora": 100}
         for col in columns:
             self.tree.heading(col, text=col)
-            self.tree.column(col, width=widths[col], minwidth=widths[col] // 2, anchor="w" if col == "Tarefa" else "center")
-        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+            self.tree.column(col, width=widths[col], minwidth=widths[col] // 2,
+                             anchor="w" if col == "Tarefa" else "center")
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical",
+                                  command=self.tree.yview,
+                                  style="Vertical.TScrollbar")
         self.tree.configure(yscrollcommand=scrollbar.set)
         self.tree.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.tree.bind("<Double-1>", lambda _e: self.on_toggle())
 
-        actions = ttk.Frame(self.window, padding=(12, 4, 12, 4))
+        actions = ttk.Frame(self.window, padding=(PAD_X, 4, PAD_X, 4))
         actions.grid(row=4, column=0, sticky="ew")
-        self.btn_toggle = ttk.Button(actions, text="Marcar/Desmarcar", command=self.on_toggle)
+        self.btn_toggle = ttk.Button(actions, text="Alternar feito", command=self.on_toggle)
         self.btn_toggle.pack(side="left", padx=(0, 6))
         self.btn_edit = ttk.Button(actions, text="Editar", command=self.on_edit)
         self.btn_edit.pack(side="left", padx=(0, 6))
@@ -143,7 +181,7 @@ class TaskForceApp:
         self.btn_refresh = ttk.Button(actions, text="Atualizar", command=self.refresh_all)
         self.btn_refresh.pack(side="left")
 
-        pager = ttk.Frame(self.window, padding=(12, 0, 12, 4))
+        pager = ttk.Frame(self.window, padding=(PAD_X, 0, PAD_X, 4))
         pager.grid(row=5, column=0, sticky="ew")
         self.btn_prev = ttk.Button(pager, text="◀ Anterior", command=self.on_prev_page)
         self.btn_prev.pack(side="left")
@@ -152,18 +190,40 @@ class TaskForceApp:
         self.btn_next = ttk.Button(pager, text="Próxima ▶", command=self.on_next_page)
         self.btn_next.pack(side="left")
         ttk.Label(pager, text="Itens/pág:").pack(side="left", padx=(16, 4))
-        self.cmb_size = ttk.Combobox(pager, values=list(PAGE_SIZE_OPTIONS), state="readonly", width=5)
+        self.cmb_size = ttk.Combobox(pager, values=list(PAGE_SIZE_OPTIONS),
+                                     state="readonly", width=5)
         self.cmb_size.set(str(self.size) if str(self.size) in PAGE_SIZE_OPTIONS else "20")
         self.cmb_size.pack(side="left")
         self.cmb_size.bind("<<ComboboxSelected>>", lambda _e: self.on_size_change())
 
-        footer = ttk.Frame(self.window, padding=(12, 4, 12, 12))
+        footer = ttk.Frame(self.window, padding=(PAD_X, 4, PAD_X, 12))
         footer.grid(row=6, column=0, sticky="ew")
         footer.columnconfigure(0, weight=1)
-        self.lbl_status = ttk.Label(footer, text="Pronto.", foreground="gray")
+        self.lbl_status = ttk.Label(footer, text="Pronto.", style="Muted.TLabel")
         self.lbl_status.grid(row=0, column=0, sticky="w")
-        self.lbl_api = ttk.Label(footer, text=f"API: {self.client.base_url}", foreground="gray")
-        self.lbl_api.grid(row=1, column=0, sticky="w")
+
+    # -- theming -------------------------------------------------------
+    def _apply_theme(self) -> None:
+        apply_theme(self.window, self.theme)
+        # Toggle shows the *other* option as action (sentence case, no caps).
+        other = "Escuro" if self.theme_name == "light" else "Claro"
+        self.btn_theme.configure(text=f"Tema: {other}")
+        self._retag_rows()
+
+    def _retag_rows(self) -> None:
+        t = self.theme
+        self.tree.tag_configure("even", background=t.surface, foreground=t.fg)
+        self.tree.tag_configure("odd", background=t.zebra, foreground=t.fg)
+        self.tree.tag_configure("done", foreground=t.done_fg)
+        self.tree.tag_configure("pending", foreground=t.fg)
+        self.tree.tag_configure("id", foreground=t.muted)
+
+    def on_toggle_theme(self) -> None:
+        self.theme_name = "dark" if self.theme_name == "light" else "light"
+        self.theme = THEMES[self.theme_name]
+        save_theme_name(self.theme_name)
+        self._apply_theme()
+        self.show_status(f"Tema {self.theme.label.lower()} ativado.")
 
     # -- threading helpers -------------------------------------------
     def _run_async(self, work: Callable[[], Any], done: Callable[[Any], None]) -> None:
@@ -196,11 +256,12 @@ class TaskForceApp:
                     self.btn_delete, self.btn_refresh, self.btn_prev, self.btn_next):
             btn.configure(state=state)
         if busy:
-            self.lbl_status.configure(text="Carregando...", foreground="gray")
+            self.lbl_status.configure(text="Carregando...", foreground=self.theme.muted)
 
     # -- status / errors ----------------------------------------------
     def show_status(self, message: str, ok: bool = True) -> None:
-        self.lbl_status.configure(text=message, foreground="green" if ok else "red")
+        color = self.theme.ok if ok else self.theme.err
+        self.lbl_status.configure(text=message, foreground=color)
 
     def show_error(self, error: ApiError) -> None:
         prefix = ""
@@ -239,7 +300,13 @@ class TaskForceApp:
         total = stats.get("total", "—")
         done = stats.get("done", "—")
         pending = stats.get("pending", "—")
-        self.lbl_stats.configure(text=f"Total: {total} • Feitas: {done} • Pendentes: {pending}")
+        self.lbl_stats.configure(
+            text=f"{total} no total, {done} feitas, {pending} pendentes")
+        try:
+            pct = (float(done) / float(total) * 100) if float(total) > 0 else 0
+        except (TypeError, ValueError, ZeroDivisionError):
+            pct = 0
+        self.progress.configure(value=max(0, min(pct, 100)))
 
     def _load_page(self) -> None:
         search = self.entry_search.get().strip()
@@ -259,14 +326,19 @@ class TaskForceApp:
         pages = int(data.get("pages", 0))
         self.total_pages = pages
         self.tree.delete(*self.tree.get_children())
-        for item in items:
+        for i, item in enumerate(items):
+            feito = bool(item.get("feito"))
+            zebra = "even" if i % 2 == 0 else "odd"
+            state = "done" if feito else "pending"
             self.tree.insert("", tk.END, values=(
                 item.get("id", ""),
                 item.get("tarefa", ""),
-                "✔️" if item.get("feito") else "❌",
+                "● Concluída" if feito else "○ Pendente",
                 item.get("data", ""),
                 item.get("hora", ""),
-            ))
+            ), tags=(zebra, state))
+        # ID column always muted: apply after insert via column tag is not
+        # supported per-cell, so row foreground already carries the signal.
         label = f"Página {self.page}/{pages}" if pages else f"Página {self.page} (total {total})"
         self.lbl_page.configure(text=label)
         self.btn_prev.configure(state="disabled" if self.page <= 1 else "normal")
@@ -274,6 +346,9 @@ class TaskForceApp:
         if self._pending_msg:
             self.show_status(self._pending_msg)
             self._pending_msg = None
+        elif not items:
+            self.lbl_status.configure(text="Nenhuma tarefa aqui. Digite acima e pressione Enter.",
+                                      foreground=self.theme.muted)
         else:
             self.show_status(f"{total} tarefa(s) carregada(s).")
 
@@ -344,7 +419,7 @@ class TaskForceApp:
             self._run_async(lambda: self.client.update(task_id, title=new_title),
                              lambda _t: self._after_mutation("Tarefa atualizada."))
 
-        EditDialog(self.window, str(current), save)
+        EditDialog(self.window, str(current), save, self.theme)
 
     def _after_mutation(self, message: str) -> None:
         """Show `message` after the automatic refresh finishes."""
