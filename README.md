@@ -15,7 +15,7 @@
 
 <p align="center"><img src="./assets/preview.svg"></p>
 
-> Interface: campo de título + botão Criar, barra de busca/filtro, tabela (Id, Tarefa, Feito, Data, Hora) com seleção, botões Marcar/Editar/Deletar/Atualizar, paginação, estatísticas no topo e mensagens de status no rodapé.
+> Interface: campo de título + botão Criar, barra de busca/filtro, tabela (Id, Tarefa, Feito, Data, Hora) com seleção, botões Alternar feito/Editar/Deletar/Atualizar, paginação, resumo + barra de progresso no topo, mensagens de status no rodapé e alternância de tema Claro/Escuro no cabeçalho.
 
 ---
 
@@ -31,7 +31,8 @@ Funcionalidades:
 - ✅ Editar o título de uma tarefa
 - ✅ Deletar tarefas (com confirmação)
 - ✅ Buscar por texto, filtrar (Todas/Pendentes/Concluídas) e paginar
-- ✅ Barra de estatísticas (total/feitas/pendentes via `GET /stats`)
+- ✅ Resumo (total/feitas/pendentes via `GET /stats`) + barra de progresso
+- ✅ Temas Claro/Escuro com botão no cabeçalho (persistido em `~/.config/taskforce/theme.json`)
 - ✅ Feedback visual das operações + tratamento de API offline/timeout
 
 ---
@@ -60,9 +61,13 @@ TaskForce_tkinter/
 ├── api/
 │   ├── __init__.py
 │   └── client.py           # TaskForceClient (Session, timeout, ApiError) — API v2
+├── ui/
+│   ├── __init__.py
+│   ├── theme.py            # Tokens Claro/Escuro + persistência do tema
+│   └── styles.py           # apply_theme() sobre ttk `clam`
 ├── util/
 │   └── utilTask.py         # Shim de compatibilidade (deprecated, use api.client)
-├── config.py               # TASKFORCE_API_URL/TIMEOUT/PAGE_SIZE (env + .env + fallback)
+├── config.py               # TASKFORCE_API_URL/TIMEOUT/PAGE_SIZE/THEME (env + .env + fallback)
 ├── .env.example            # Exemplo de configuração
 ├── main.py                 # Interface gráfica (Tkinter/ttk) e lógica da aplicação
 ├── requirements.txt        # Dependências do projeto
@@ -115,8 +120,9 @@ cp .env.example .env   # opcional; edite TASKFORCE_API_URL se necessário
 | `TASKFORCE_API_URL` | `https://taskforce-api-zxag.onrender.com/api/v1/tasks` | `http://localhost:8000/api/v1/tasks` |
 | `TASKFORCE_TIMEOUT` | `10` (segundos) | `15` |
 | `TASKFORCE_PAGE_SIZE` | `20` | `50` |
+| `TASKFORCE_THEME` | `light` (tema inicial) | `dark` |
 
-> Pode colar só a raiz (`https://taskforce-api-zxag.onrender.com/`) que o app completa com `/api/v1/tasks` sozinho. A URL efetiva aparece no rodapé da janela.
+> Pode colar só a raiz (`https://taskforce-api-zxag.onrender.com/`) que o app completa com `/api/v1/tasks` sozinho.
 
 > ⚠️ Se a API estiver hospedada no plano gratuito do Render, o primeiro acesso após um período de inatividade pode demorar alguns segundos (cold start) — o app mostra "Carregando..." e não trava graças às requisições em thread separada.
 
@@ -136,10 +142,11 @@ Uma janela do Tkinter será aberta com a interface do TaskForce.
 |---|---|
 | **Criar tarefa** | Digite o título no campo superior e clique em **Criar** (ou `Enter`) |
 | **Buscar/filtrar** | Digite no campo Buscar, escolha Todas/Pendentes/Concluídas e clique em **Buscar** |
-| **Marcar como concluída** | Selecione a linha e clique em **Marcar/Desmarcar** (ou duplo-clique) |
+| **Marcar como concluída** | Selecione a linha e clique em **Alternar feito** (ou duplo-clique) |
 | **Editar título** | Selecione a linha e clique em **Editar** |
 | **Deletar tarefa** | Selecione a linha e clique em **Deletar** (pede confirmação) |
 | **Paginar** | Use **◀ Anterior / Próxima ▶** e o seletor de itens/página |
+| **Trocar tema** | Clique em **Tema: Escuro/Claro** no canto superior direito |
 
 A tabela é atualizada automaticamente após cada ação, e a mensagem na parte inferior da tela informa se a operação foi bem-sucedida ou se ocorreu algum erro.
 
@@ -152,9 +159,10 @@ A tabela é atualizada automaticamente após cada ação, e a mensagem na parte 
 - [x] Adicionar edição do texto de uma tarefa já criada
 - [x] Melhorar o tratamento de erros de conexão com a API (timeout + thread + mensagem amigável)
 - [x] Permitir configurar a URL da API por variável de ambiente/arquivo `.env`
+- [x] Tema escuro persistido (alternância Claro/Escuro no cabeçalho)
 - [ ] Diálogo de configurações dentro do app (trocar URL sem editar arquivo)
 - [ ] Exportar tarefas para CSV
-- [ ] Atalhos de teclado e tema escuro persistido
+- [ ] Atalhos de teclado
 
 ---
 

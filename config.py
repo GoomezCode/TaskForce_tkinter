@@ -12,6 +12,8 @@ Env vars:
                         Local dev: http://localhost:8000/api/v1/tasks
     TASKFORCE_TIMEOUT   HTTP timeout in seconds (default: 10)
     TASKFORCE_PAGE_SIZE Default page size for listing (default: 20)
+    TASKFORCE_THEME     Initial theme: "light" or "dark" (default: light).
+                        The in-app toggle persists to ~/.config/taskforce/theme.json.
 """
 
 from __future__ import annotations
