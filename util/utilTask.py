@@ -1,19 +1,37 @@
-import requests
+"""Backward-compatibility shim for the old ``utilTask`` function API.
 
-url = "https://taskforce-api-zxag.onrender.com/task"
+.. deprecated::
+    Import from :mod:`api.client` (:class:`TaskForceClient`) instead.
+    This module is kept only so old imports don't break; it now talks
+    to the API v2 endpoints.
+"""
 
-def getTask():
-    response = requests.get(f"{url}/get")
-    return response.json()
+from __future__ import annotations
 
-def deleteTask(idTask):
-    response = requests.delete(f"{url}/delete/{idTask}")
-    return response
+from typing import Any
 
-def createTask(nmTarefa):
-    response = requests.post(f"{url}/create/{nmTarefa}")
-    return response
+import config
+from api.client import TaskForceClient
 
-def marcarTask(idTask):
-    response = requests.put(f"{url}/put/marcar/{idTask}")
-    return response
+_client = TaskForceClient(base_url=config.API_URL, timeout=config.TIMEOUT)
+
+
+def getTask(search: str | None = None) -> list[dict[str, Any]]:
+    """Return the first page of tasks as a plain list (legacy shape)."""
+    data = _client.list_tasks(search=search, size=config.PAGE_SIZE)
+    return data.get("items", [])
+
+
+def createTask(nmTarefa: str) -> dict[str, Any]:
+    """Create a task; returns the created task dict (raises ApiError on failure)."""
+    return _client.create(nmTarefa)
+
+
+def deleteTask(idTask: int | str) -> None:
+    """Delete a task by id (raises ApiError on failure)."""
+    _client.delete(int(idTask))
+
+
+def marcarTask(idTask: int | str) -> dict[str, Any]:
+    """Toggle a task's done status (raises ApiError on failure)."""
+    return _client.toggle_done(int(idTask))

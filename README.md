@@ -15,7 +15,7 @@
 
 <p align="center"><img src="./assets/preview.svg"></p>
 
-> Representação ilustrativa da interface: campo de entrada para digitar a tarefa (ou o Id, dependendo da ação), botões de **Criar**, **Deletar** e **Marcar**, uma tabela (Treeview) listando as tarefas cadastradas e um label de feedback na parte inferior.
+> Interface: campo de título + botão Criar, barra de busca/filtro, tabela (Id, Tarefa, Feito, Data, Hora) com seleção, botões Alternar feito/Editar/Deletar/Atualizar, paginação, resumo + barra de progresso no topo, mensagens de status no rodapé e alternância de tema Claro/Escuro no cabeçalho.
 
 ---
 
@@ -26,10 +26,14 @@ O **TaskForce Tkinter** é o cliente gráfico (front-end desktop) do projeto Tas
 Funcionalidades:
 
 - ✅ Criar novas tarefas
-- ✅ Listar tarefas em uma tabela organizada (Id, Tarefa, Feito)
-- ✅ Marcar/desmarcar tarefas como concluídas
-- ✅ Deletar tarefas
-- ✅ Feedback visual das operações (mensagens de sucesso/erro)
+- ✅ Listar tarefas em tabela (Id, Tarefa, Feito, Data, Hora)
+- ✅ Marcar/desmarcar tarefas como concluídas (botão ou duplo-clique)
+- ✅ Editar o título de uma tarefa
+- ✅ Deletar tarefas (com confirmação)
+- ✅ Buscar por texto, filtrar (Todas/Pendentes/Concluídas) e paginar
+- ✅ Resumo (total/feitas/pendentes via `GET /stats`) + barra de progresso
+- ✅ Temas Claro/Escuro com botão no cabeçalho (persistido em `~/.config/taskforce/theme.json`)
+- ✅ Feedback visual das operações + tratamento de API offline/timeout
 
 ---
 
@@ -54,12 +58,24 @@ Esta aplicação depende da API abaixo estar no ar para funcionar:
 
 ```
 TaskForce_tkinter/
+├── api/
+│   ├── __init__.py
+│   └── client.py           # TaskForceClient (Session, timeout, ApiError) — API v2
+├── ui/
+│   ├── __init__.py
+│   ├── theme.py            # Tokens Claro/Escuro + persistência do tema
+│   └── styles.py           # apply_theme() sobre ttk `clam`
 ├── util/
-│   └── utilTask.py       # Funções que se comunicam com a API (GET, POST, PUT, DELETE)
-├── main.py                # Interface gráfica (Tkinter) e lógica da aplicação
+│   └── utilTask.py         # Shim de compatibilidade (deprecated, use api.client)
+├── config.py               # TASKFORCE_API_URL/TIMEOUT/PAGE_SIZE/THEME (env + .env + fallback)
+├── .env.example            # Exemplo de configuração
+├── main.py                 # Interface gráfica (Tkinter/ttk) e lógica da aplicação
 ├── requirements.txt        # Dependências do projeto
 └── README.md
 ```
+
+> Compatível com a **TaskForce API v2.0.0** (`/api/v1/tasks` com corpos JSON
+> `{"title": ...}`; respostas usam `tarefa`/`feito`/`data`/`hora`).
 
 ---
 
@@ -90,18 +106,25 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Configure a URL da API (se necessário)
+### 4. Configure a URL da API (opcional)
 
-Por padrão, a aplicação já aponta para a API hospedada:
+Por padrão o app já aponta para a produção. Só configure se for usar outra API
+(ex: localhost). Ordem de resolução: **variável de ambiente → arquivo `.env` → produção**.
 
-```python
-# util/utilTask.py
-url = "https://taskforce-api-zxag.onrender.com/task"
+```bash
+cp .env.example .env   # opcional; edite TASKFORCE_API_URL se necessário
 ```
 
-Se você estiver rodando sua própria instância da API (por exemplo, localmente), atualize essa URL para o endereço correto (ex: `http://localhost:8000/task`).
+| Variável | Default (produção) | Exemplo local |
+|---|---|---|
+| `TASKFORCE_API_URL` | `https://taskforce-api-zxag.onrender.com/api/v1/tasks` | `http://localhost:8000/api/v1/tasks` |
+| `TASKFORCE_TIMEOUT` | `10` (segundos) | `15` |
+| `TASKFORCE_PAGE_SIZE` | `20` | `50` |
+| `TASKFORCE_THEME` | `light` (tema inicial) | `dark` |
 
-> ⚠️ Se a API estiver hospedada no plano gratuito do Render, o primeiro acesso após um período de inatividade pode demorar alguns segundos (cold start) — isso é esperado.
+> Pode colar só a raiz (`https://taskforce-api-zxag.onrender.com/`) que o app completa com `/api/v1/tasks` sozinho.
+
+> ⚠️ Se a API estiver hospedada no plano gratuito do Render, o primeiro acesso após um período de inatividade pode demorar alguns segundos (cold start) — o app mostra "Carregando..." e não trava graças às requisições em thread separada.
 
 ### 5. Execute a aplicação
 
@@ -117,9 +140,13 @@ Uma janela do Tkinter será aberta com a interface do TaskForce.
 
 | Ação | Como fazer |
 |---|---|
-| **Criar tarefa** | Digite o nome da tarefa no campo de texto e clique em **Criar** |
-| **Marcar como concluída** | Digite o **Id** da tarefa no campo de texto e clique em **Marcar** |
-| **Deletar tarefa** | Digite o **Id** da tarefa no campo de texto e clique em **Deletar** |
+| **Criar tarefa** | Digite o título no campo superior e clique em **Criar** (ou `Enter`) |
+| **Buscar/filtrar** | Digite no campo Buscar, escolha Todas/Pendentes/Concluídas e clique em **Buscar** |
+| **Marcar como concluída** | Selecione a linha e clique em **Alternar feito** (ou duplo-clique) |
+| **Editar título** | Selecione a linha e clique em **Editar** |
+| **Deletar tarefa** | Selecione a linha e clique em **Deletar** (pede confirmação) |
+| **Paginar** | Use **◀ Anterior / Próxima ▶** e o seletor de itens/página |
+| **Trocar tema** | Clique em **Tema: Escuro/Claro** no canto superior direito |
 
 A tabela é atualizada automaticamente após cada ação, e a mensagem na parte inferior da tela informa se a operação foi bem-sucedida ou se ocorreu algum erro.
 
@@ -127,11 +154,15 @@ A tabela é atualizada automaticamente após cada ação, e a mensagem na parte 
 
 ## 🛠️ Melhorias futuras
 
-- [ ] Substituir o campo único de entrada por campos separados para nome da tarefa e Id
-- [ ] Adicionar confirmação antes de deletar uma tarefa
-- [ ] Adicionar edição do texto de uma tarefa já criada
-- [ ] Melhorar o tratamento de erros de conexão com a API (ex: quando ela está "dormindo" no Render)
-- [ ] Permitir configurar a URL da API por variável de ambiente/arquivo de configuração
+- [x] Substituir o campo único de entrada por seleção na tabela + campo de título
+- [x] Adicionar confirmação antes de deletar uma tarefa
+- [x] Adicionar edição do texto de uma tarefa já criada
+- [x] Melhorar o tratamento de erros de conexão com a API (timeout + thread + mensagem amigável)
+- [x] Permitir configurar a URL da API por variável de ambiente/arquivo `.env`
+- [x] Tema escuro persistido (alternância Claro/Escuro no cabeçalho)
+- [ ] Diálogo de configurações dentro do app (trocar URL sem editar arquivo)
+- [ ] Exportar tarefas para CSV
+- [ ] Atalhos de teclado
 
 ---
 
